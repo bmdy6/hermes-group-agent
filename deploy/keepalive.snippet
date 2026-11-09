@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# If systemd is unavailable, run this foreground loop under your process supervisor.
+# Export one HERMES_HOME and HERMES_REPO per instance before starting it.
+# This loop also needs a host boot hook; it cannot restart itself after a reboot.
+set -euo pipefail
+: "${HERMES_HOME:?Set an absolute, isolated HERMES_HOME}"
+: "${HERMES_REPO:?Set HERMES_REPO}"
+while true; do
+  # start.sh uses Hermes' per-instance runtime lock, avoiding pgrep self-matches.
+  bash "$HERMES_HOME/start.sh" || true
+  sleep 60
+done

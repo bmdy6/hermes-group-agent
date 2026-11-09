@@ -1,0 +1,57 @@
+model:
+  provider: group-openai
+  default: gpt-6.1-terra
+
+providers:
+  group-openai:
+    api: https://api.openai.com/v1
+    key_env: MODEL_API_KEY
+    transport: codex_responses
+    default_model: gpt-6.1-terra
+
+timezone: UTC
+platforms:
+  telegram:
+    require_mention: true
+    observe_unmentioned_group_messages: true
+    guest_mode: false
+    extra:
+      drop_pending_on_cold_boot: false
+
+# ID 白名单由 .env 的 TELEGRAM_* 变量提供，不在 YAML 插值。
+platform_toolsets:
+  telegram: [web, skills, todo, memory, session_search, mcp-github, mcp-linear]
+  cron: []  # 预执行脚本已提供数据；摘要模型无需工具。
+
+mcp_servers:
+  github:
+    enabled: false
+    url: https://api.githubcopilot.com/mcp/readonly
+    headers:
+      Authorization: "Bearer ${GITHUB_READ_ONLY_TOKEN}"
+      X-MCP-Readonly: "true"
+      X-MCP-Toolsets: repos,issues,pull_requests
+    sampling:
+      enabled: false
+  linear:
+    enabled: false
+    url: https://mcp.linear.app/mcp/readonly
+    headers:
+      Authorization: "Bearer ${LINEAR_READ_ONLY_TOKEN}"
+    sampling:
+      enabled: false
+
+# 原生插件默认不加载；启用步骤见 README（需要一起调整 mention gate）。
+plugins:
+  isolation: in_process  # ingress hook 需要原生 gateway / SessionStore handle。
+  enabled: []
+  entries:
+    jev-router:
+      settings:
+        enabled: false
+        threshold: 0.85
+        cooldown_seconds: 600
+        context_messages: 10
+        timeout_seconds: 2
+        jev_model: jev-latest
+        assistant_name: Group assistant

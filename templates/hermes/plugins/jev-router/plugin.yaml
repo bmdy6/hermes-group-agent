@@ -1,0 +1,6 @@
+name: jev-router
+version: 0.1.0
+requires_hermes: ">=0.23.0"
+description: Conservative opt-in Telegram ambient-message routing with Jev
+provides_hooks:
+  - pre_gateway_dispatch
