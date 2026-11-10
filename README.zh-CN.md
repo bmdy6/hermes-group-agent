@@ -2,6 +2,11 @@
 
 基于原版 Hermes 的 Telegram 群助手：@ 回答、共享群上下文、GitHub/Linear 只读查询，以及可配置、有限额的推特日报。
 
+<!-- readme-illustrate:group-flow-zh -->
+<img src="docs/images/group-flow.svg" alt="群里提及、共享上下文、只读数据源与每日摘要流程" width="838">
+
+示意图：群里 @ → 共享上下文 → 授权数据源 → 回答；每日摘要单独受预算限制。
+<!-- /readme-illustrate:group-flow-zh -->
 [English](README.md) · [让 AI 帮你搭](SKILL.md)
 
 ## 适合谁
