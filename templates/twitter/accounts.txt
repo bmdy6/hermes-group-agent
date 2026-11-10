@@ -1,2 +1,0 @@
-# Add one public account handle per line, without @.
-# Leave empty until the optional digest is configured.

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -20,7 +21,8 @@ class Deploy(unittest.TestCase):
         self.repo = self.base / 'runtime'
         binary = self.repo / '.venv/bin'
         binary.mkdir(parents=True)
-        (binary / 'python').symlink_to(sys.executable)
+        (binary / 'python').write_text('#!/bin/sh\nexec ' + shlex.quote(sys.executable) + ' \"$@\"\n')
+        (binary / 'python').chmod(0o700)
         self.env = {'HOME': str(self.base), 'HERMES_HOME': str(self.instance),
                     'HERMES_REPO': str(self.repo), 'PATH': os.defpath}
         for args in [('init',), ('-c','user.name=Fixture','-c','user.email=fixture@example.invalid',
@@ -67,7 +69,7 @@ else:
         result = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(stat.S_IMODE((self.instance / '.env').stat().st_mode), 0o600)
-        for path in ['SOUL.md','config.yaml','twitter/accounts.txt']:
+        for path in ['SOUL.md','config.yaml','twitter/digest.yaml']:
             with (self.instance / path).open('a') as f:
                 f.write('\n# operator customization\n')
         envfile = self.instance / '.env'
@@ -79,7 +81,7 @@ else:
         result = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.snapshot(), before)
-        for path in ['SOUL.md','config.yaml','twitter/accounts.txt']:
+        for path in ['SOUL.md','config.yaml','twitter/digest.yaml']:
             self.assertIn('operator customization', (self.instance / path).read_text())
         self.assertEqual(len(json.loads((self.instance / 'cron/jobs.json').read_text())['jobs']), 1)
 
@@ -98,3 +100,16 @@ else:
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('already running',result.stdout)
         self.assertFalse((self.instance/'logs').exists())
+
+    def test_bootstrap_uses_lockfile_and_never_starts_gateway(self):
+        commands = self.base/'commands'; commands.mkdir()
+        uv = commands/'uv'
+        log = self.base/'uv-args'
+        uv.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "' + str(log) + '"\n')
+        uv.chmod(0o700)
+        result = self.run_script('bootstrap.sh', {**self.env, 'PATH': str(commands)+':'+os.defpath})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = log.read_text().splitlines()
+        self.assertEqual(args, ['sync', '--frozen', '--python', '3.14', '--extra', 'telegram', '--extra', 'mcp'])
+        self.assertTrue((self.instance/'twitter/digest.yaml').exists())
+        self.assertFalse((self.instance/'logs/gateway-nohup.log').exists())

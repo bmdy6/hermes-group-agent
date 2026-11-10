@@ -17,6 +17,7 @@ platforms:
     guest_mode: false
     extra:
       drop_pending_on_cold_boot: false
+      disable_link_previews: true
 
 # ID 白名单由 .env 的 TELEGRAM_* 变量提供，不在 YAML 插值。
 platform_toolsets:
@@ -41,10 +42,10 @@ mcp_servers:
     sampling:
       enabled: false
 
-# 原生插件默认不加载；启用步骤见 README（需要一起调整 mention gate）。
+# Follow commands are enabled; ambient routing remains opt-in.
 plugins:
   isolation: in_process  # ingress hook 需要原生 gateway / SessionStore handle。
-  enabled: []
+  enabled: [digest-follow]
   entries:
     jev-router:
       settings:
@@ -55,3 +56,6 @@ plugins:
         timeout_seconds: 2
         jev_model: jev-latest
         assistant_name: Group assistant
+
+cron:
+  wrap_response: false

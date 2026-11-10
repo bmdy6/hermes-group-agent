@@ -1,0 +1,4 @@
+name: digest-follow
+version: 0.1.0
+requires_hermes: ">=0.23.0"
+description: Manage digest follows using native slash commands in allowlisted Telegram groups

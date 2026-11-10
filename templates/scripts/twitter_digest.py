@@ -1,144 +1,247 @@
 #!/usr/bin/env python3
-"""twitterapi.io -> Hermes cron input. Only standard library; --fixture is offline."""
+"""Apify -> Hermes cron candidates. Round-trip YAML config; --fixture is offline."""
 import argparse
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
+import fcntl
 import json
 import os
 from pathlib import Path
 import re
 import sys
-import time
 from urllib.parse import urlencode
-from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 
-# twitterapi.io 试用账号约每 5 秒只允许 1 次请求；遇到 429 等一轮再试一次。
-MIN_INTERVAL = float(os.environ.get("TWITTERAPI_MIN_INTERVAL", "5.5"))
-_last_call = [0.0]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from digest_config import load_config
 
 
-def _get(request):
-    for attempt in range(2):
-        wait = _last_call[0] + MIN_INTERVAL - time.monotonic()
-        if wait > 0:
-            time.sleep(wait)
-        _last_call[0] = time.monotonic()
-        try:
-            with urlopen(request, timeout=20) as response:
-                return json.load(response)
-        except HTTPError as exc:
-            if exc.code != 429 or attempt:
-                raise
-            exc.close()
+ACTOR = 'kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest'
+API = 'https://api.apify.com/v2'
+# Free-plan price verified from Actor pricingInfos. Reject higher prices before launch.
+PRICE = 0.00025
+TERMINAL = {'SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'}
 
 
-def fetch(account, key):
-    cursor = ""
-    while True:
-        query = urlencode({"userName": account, "cursor": cursor, "includeReplies": "false"})
-        request = Request("https://api.twitterapi.io/twitter/user/last_tweets?" + query,
-                          headers={"X-API-Key": key})
-        page = _get(request)
-        yield page
-        tweets = unpack(page)
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-        if not page.get("has_next_page") or not tweets or any(stamp(t) < cutoff for t in tweets):
+def api(path, key, payload=None):
+    request = Request(API + path, data=None if payload is None else json.dumps(payload).encode(),
+                      headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
+    with urlopen(request, timeout=70) as response:
+        return json.load(response)
+
+
+def check_price(key):
+    actor = api('/acts/' + ACTOR, key)['data']
+    now = datetime.now(timezone.utc)
+    prices = [p for p in actor['pricingInfos'] if datetime.fromisoformat(p['startedAt'].replace('Z', '+00:00')) <= now]
+    price = max(prices, key=lambda p: p['startedAt'])
+    events = price.get('pricingPerEvent', {}).get('actorChargeEvents', {})
+    # Only this known per-result event, with no start/platform charge, is supported.
+    if price['pricingModel'] != 'PAY_PER_EVENT' or set(events) != {'apify-default-dataset-item'}:
+        raise ValueError('unsupported Actor pricing')
+    event = events['apify-default-dataset-item']
+    rate = event.get('eventPriceUsd')
+    if rate is None:
+        rate = event['eventTieredPricingUsd']['FREE']['tieredEventPriceUsd']
+    if not 0 < rate <= PRICE:
+        raise ValueError('Actor price exceeds configured ceiling')
+
+
+def fetch(key, job, limit):
+    # Input maxItems can over-return. Dollar cap applies to current PAY_PER_EVENT pricing.
+    params = urlencode({'waitForFinish': 60, 'timeout': 180, 'maxItems': limit,
+                        'maxTotalChargeUsd': f'{limit * PRICE:.8f}'})
+    run = api('/acts/' + ACTOR + '/runs?' + params, key,
+              {'twitterContent': job['query'], 'queryType': job['sort'], 'maxItems': limit})['data']
+    # Server-side long polling is bounded; never retry POST (could create a second paid run).
+    for _ in range(4):
+        if run['status'] in TERMINAL:
             break
-        following = page.get("next_cursor")
-        if not following or following == cursor:
-            raise ValueError("invalid pagination cursor")
-        cursor = following
+        run = api('/actor-runs/' + run['id'] + '?waitForFinish=60', key)['data']
+    if run['status'] not in TERMINAL:
+        api('/actor-runs/' + run['id'] + '/abort', key, {})
+        raise ValueError('Actor polling timed out')
+    if run['status'] != 'SUCCEEDED':
+        raise ValueError('Actor run failed')
+    items = api('/datasets/' + run['defaultDatasetId'] + '/items?' +
+                urlencode({'clean': 'true', 'limit': limit}), key)
+    if not isinstance(items, list) or run.get('usageTotalUsd') is None:
+        raise ValueError('invalid Actor output or missing usage')
+    return items, {k: run.get(k) for k in ('id', 'status', 'usageTotalUsd', 'usage', 'usageUsd',
+                                          'chargedEventCounts', 'eventUsage')}
 
 
-def unpack(page):
-    if page.get("status") != "success" or str(page.get("code", 0)) != "0":
-        raise ValueError("twitterapi.io returned an API error")
-    tweets = page.get("data", {}).get("tweets")
-    if not isinstance(tweets, list):
-        raise ValueError("twitterapi.io response missing data.tweets")
-    return tweets
+def jobs(accounts, now, total, config):
+    window = f'since_time:{int((now - timedelta(hours=24)).timestamp())} until_time:{int(now.timestamp())} -filter:retweets -filter:replies'
+    hot = [{'source': 'hot', 'lang': route['lang'], 'min_likes': route['min_likes'], 'limit': route['limit'],
+            'query': f"{route['keywords']} min_faves:{route['min_likes']} lang:{route['lang']} {window}", 'sort': 'Top'}
+           for route in config['searches']]
+    size = config['accounts_per_query']
+    chunks = [accounts[i:i+size] for i in range(0, len(accounts), size)]
+    hot_total = sum(j['limit'] for j in hot)
+    follow_total = max(0, total - hot_total) if total > hot_total else total // (len(hot) + 1)
+    follow = []
+    for i, chunk in enumerate(chunks):
+        quota = follow_total // len(chunks) + (i < follow_total % len(chunks))
+        if quota:
+            query = '(' + ' OR '.join('from:' + a for a in chunk) + ') ' + window
+            follow.append({'source': 'follow', 'limit': quota, 'query': query, 'sort': 'Latest'})
+    return follow + hot
 
 
 def stamp(tweet):
-    return parsedate_to_datetime(tweet["createdAt"]).astimezone(timezone.utc)
+    value = tweet['createdAt']
+    try:
+        result = parsedate_to_datetime(value)
+    except ValueError:
+        result = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    if result.tzinfo is None:
+        raise ValueError('tweet timestamp needs timezone')
+    return result.astimezone(timezone.utc)
 
 
-def select(pages, seen, now):
-    cutoff = now - timedelta(hours=24)
+def select(batches, seen, now, accounts, total):
     selected = {}
-    for page in pages:
-        for tweet in unpack(page):
-            created = stamp(tweet)
-            tid = str(tweet["id"])
-            if not cutoff <= created <= now or tid in seen:
+    # Follow wins across sources, independent of fixture ordering.
+    for batch in sorted(batches, key=lambda b: b['source'] != 'follow'):
+        if batch['source'] not in ('follow', 'hot') or not isinstance(batch['items'], list):
+            raise ValueError('invalid fixture batch')
+        tweets = batch['items']
+        if batch['source'] == 'hot':
+            tweets = sorted(tweets, key=lambda t: int(t.get('likeCount', 0)), reverse=True)
+        accepted = 0
+        for tweet in tweets:
+            # Actors sometimes emit a no-results placeholder instead of a tweet.
+            if tweet.get('noResults') is True or tweet.get('type') == 'mock_tweet':
                 continue
-            if tweet.get("retweeted_tweet") or tweet.get("isRetweet") or tweet["text"].startswith("RT @"):
+            tid = str(tweet['id'])
+            if not now - timedelta(hours=24) <= stamp(tweet) <= now or tid in seen or tid in selected:
                 continue
-            selected[tid] = {"id": tid, "account": tweet["author"]["userName"],
-                             "text": tweet["text"], "url": tweet["url"], "createdAt": tweet["createdAt"]}
+            if tweet.get('retweeted_tweet') or tweet.get('isRetweet') or tweet.get('isReply') or tweet['text'].startswith('RT @'):
+                continue
+            author = tweet['author']
+            if batch['source'] == 'follow' and author['userName'].lower() not in {a.lower() for a in accounts}:
+                continue
+            if batch['source'] == 'hot' and (int(tweet.get('likeCount', 0)) < batch.get('min_likes', 0) or
+                    (batch.get('lang') and tweet.get('lang') != batch['lang'])):
+                continue
+            if accepted >= batch.get('limit', total) or len(selected) >= total:
+                break
+            selected[tid] = {'id': tid, 'account': author['userName'], 'displayName': author.get('name') or author['userName'],
+                             'text': tweet['text'], 'url': tweet['url'], 'createdAt': tweet['createdAt'],
+                             'source': batch['source'], 'lang': tweet.get('lang'), 'likeCount': int(tweet.get('likeCount', 0))}
+            accepted += 1
     return selected
+
+
+def write_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(value, ensure_ascii=False) + '\n')
+    temporary.replace(path)
+
+
+def collect(home, key, accounts, now, total, calls, config):
+    path = home / 'state/twitter_budget.json'
+    date = now.astimezone(timezone(timedelta(hours=8))).date().isoformat()
+    budget = json.loads(path.read_text()) if path.exists() else {}
+    if budget.get('date') != date:
+        budget = {'date': date, 'calls': 0, 'items': 0}
+    for name in ('calls', 'items'):
+        if type(budget[name]) is not int or budget[name] < 0:
+            raise ValueError('invalid daily budget state')
+    batches, runs = [], []
+    if budget['calls'] >= calls or budget['items'] >= total:
+        return batches, runs
+    check_price(key)
+    succeeded = 0
+    attempted = 0
+    for job in jobs(accounts, now, total, config):
+        limit = min(job['limit'], total - budget['items'])
+        if budget['calls'] >= calls or limit <= 0:
+            break
+        # Reserve before POST, never refund: timeouts/crashes may still have launched a paid run.
+        budget['calls'] += 1
+        budget['items'] += limit
+        write_json(path, budget)
+        attempted += 1
+        try:
+            items, run = fetch(key, job, limit)
+            batch = {**job, 'limit': limit, 'items': items[:limit]}
+            # Validate this query independently before accepting its candidates.
+            select([batch], {}, now, accounts, total)
+        except Exception as exc:
+            print(f"twitter_digest: {job['source']}: {type(exc).__name__}", file=sys.stderr)
+            continue
+        batches.append(batch)
+        runs.append({**run, 'source': job['source'], 'lang': job.get('lang'), 'returned': len(items)})
+        succeeded += 1
+    if attempted and not succeeded:
+        raise ValueError('all searches failed')
+    return batches, runs
+
+
+def execute(args, home):
+    config = load_config(args.config or home / 'twitter/digest.yaml')
+    accounts = list(config['accounts'])
+    total = config['daily']['max_items']
+    calls = config['daily']['max_calls']
+    seen_path = home / 'state/twitter_seen.json'
+    seen = json.loads(seen_path.read_text()) if seen_path.exists() else {}
+    if not isinstance(seen, dict):
+        raise ValueError('invalid twitter_seen.json')
+    now = datetime.now(timezone.utc)
+    # Validate/prune before any paid side effects, even for dry-run.
+    seen = {tid: ts for tid, ts in seen.items() if datetime.fromisoformat(ts) >= now - timedelta(days=7)}
+    if args.fixture:
+        batches = json.loads(args.fixture.read_text())
+        if not isinstance(batches, list):
+            raise ValueError('fixture must be a list of source/items batches')
+        runs = []
+    else:
+        key_file = home / 'secrets/apify.key'
+        key = key_file.read_text().strip() if key_file.exists() else ''
+        key = key or os.environ.get('APIFY_TOKEN', '').strip()
+        if not key:
+            # This fixed message contains no user-supplied values.
+            print('twitter_digest: missing secrets/apify.key (or APIFY_TOKEN)', file=sys.stderr)
+            return 1
+        batches, runs = collect(home, key, accounts, now, total, calls, config)
+    selected = select(batches, seen, now, accounts, total)
+    if args.dry_run:
+        print(json.dumps({'dryRun': True, 'returned': sum(len(b['items']) for b in batches),
+                          'selected': len(selected), 'sources': {s: sum(t['source'] == s for t in selected.values()) for s in ('follow', 'hot')},
+                          'runs': runs, 'usageTotalUsd': sum(r['usageTotalUsd'] for r in runs),
+                          'usageNote': 'Snapshot at completion; re-read actor-runs/<id> after billing settles'}, ensure_ascii=False))
+        return 0
+    # Handoff dedup only: Hermes owns model execution and Telegram delivery.
+    seen.update({tid: now.isoformat() for tid in selected})
+    if selected or seen_path.exists():
+        write_json(seen_path, seen)
+    print(json.dumps({'digestMaxItems': config['digest']['max_items'], 'tweets': list(selected.values())} if selected else {'wakeAgent': False}, ensure_ascii=False))
+    return 0
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fixture", type=Path, help="one API response or a list of API response pages")
-    parser.add_argument("--accounts", type=Path)
+    parser.add_argument('--fixture', type=Path, help='offline list of {source, items, lang?, min_likes?, limit?} batches')
+    parser.add_argument('--config', type=Path, help='active digest YAML (default: HERMES_HOME/twitter/digest.yaml)')
+    parser.add_argument('--dry-run', action='store_true', help='only fetch; report counts/usage; do not update seen')
     args = parser.parse_args(argv)
-    # Installed script lives in HERMES_HOME/scripts; cron may scrub HERMES_HOME itself.
-    home = Path(os.environ["HERMES_HOME"]) if os.environ.get("HERMES_HOME") else Path(__file__).resolve().parents[1]
+    home = Path(os.environ['HERMES_HOME']) if os.environ.get('HERMES_HOME') else Path(__file__).resolve().parents[1]
     try:
-        accounts = (args.accounts or home / "twitter/accounts.txt").read_text().splitlines()
-        accounts = [a.strip().lstrip("@") for a in accounts if a.strip() and not a.lstrip().startswith("#")]
-        if not accounts or any(not re.fullmatch(r"[A-Za-z0-9_]{1,15}", a) for a in accounts):
-            raise ValueError("accounts.txt needs valid account handles")
-        seen_path = home / "state/twitter_seen.json"
-        seen = json.loads(seen_path.read_text()) if seen_path.exists() else {}
-        if not isinstance(seen, dict):
-            raise ValueError("invalid twitter_seen.json")
-        now = datetime.now(timezone.utc)
         if args.fixture:
-            data = json.loads(args.fixture.read_text())
-            pages = data if isinstance(data, list) else [data]
-            selected = select(pages, seen, now)
-        else:
-            key_file = home / "secrets/twitterapi_io.key"
-            key = key_file.read_text().strip() if key_file.exists() else ""
-            key = key or os.environ.get("TWITTER_DIGEST_API_KEY", "").strip()
-            if not key:
-                raise ValueError("missing secrets/twitterapi_io.key (or TWITTER_DIGEST_API_KEY)")
-            selected = {}
-            succeeded = 0
-            for account in dict.fromkeys(accounts):
-                try:
-                    candidates = select(fetch(account, key), seen, now)
-                except Exception as exc:
-                    # Account-local failures must not abort other accounts or leak response/key text.
-                    print(f"twitter_digest: @{account}: {type(exc).__name__}", file=sys.stderr)
-                    continue
-                selected.update(candidates)
-                succeeded += 1
-            if not succeeded:
-                return 1
-        # Retain seven days of handoff dedup, including on runs with no new tweets.
-        seen = {tid: ts for tid, ts in seen.items() if datetime.fromisoformat(ts) >= now - timedelta(days=7)}
-        # Handoff dedup only: Hermes owns model execution and Telegram delivery.
-        seen.update({tid: now.isoformat() for tid in selected})
-        if selected or seen_path.exists():
-            seen_path.parent.mkdir(parents=True, exist_ok=True)
-            seen_path.write_text(json.dumps(seen, ensure_ascii=False) + "\n")
-        if not selected:
-            print(json.dumps({"wakeAgent": False}))
-            return 0
-        print(json.dumps({"tweets": list(selected.values())}, ensure_ascii=False))
-        return 0
-    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        # Never echo HTTP bodies, exception URLs or credentials into cron/model logs.
-        message = str(exc) if isinstance(exc, ValueError) and not isinstance(exc, json.JSONDecodeError) else type(exc).__name__
-        print("twitter_digest: " + message, file=sys.stderr)
+            return execute(args, home)
+        (home / 'state').mkdir(parents=True, exist_ok=True)
+        with (home / 'state/twitter_digest.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return execute(args, home)
+    except Exception as exc:
+        # Never echo external error text, HTTP bodies, request URLs or credentials.
+        print('twitter_digest: ' + type(exc).__name__, file=sys.stderr)
         return 1
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

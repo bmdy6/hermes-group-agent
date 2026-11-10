@@ -1,0 +1,24 @@
+# Active digest configuration; commands preserve comments and quotes.
+accounts:
+  apify: "Example: automation tooling"
+  example_user: "Example only; replace with a verified account"
+# Each hot route has its own query, language, threshold and result cap.
+searches:
+  - keywords: '(AI OR LLM OR Claude OR GPT OR agent)'
+    lang: en
+    min_likes: 3000
+    limit: 20
+  - keywords: '(AI OR 大模型 OR 智能体 OR 人工智能)'
+    lang: zh
+    min_likes: 300
+    limit: 20
+accounts_per_query: 20
+daily:
+  max_calls: 3
+  max_items: 300
+digest:
+  max_items: 8
+# Profile verification has a separate daily budget (not the digest's 3 runs).
+lookup:
+  daily_max_calls: 10
+  max_charge_usd: 0.005

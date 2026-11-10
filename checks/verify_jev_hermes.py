@@ -32,6 +32,7 @@ with tempfile.TemporaryDirectory(prefix='group-jev-hermes-') as tmp:
     config = safe_load((root / 'templates/hermes/config.yaml').read_text())
     home = Path(tmp)
     shutil.copytree(root / 'templates/hermes/plugins', home / 'plugins')
+    shutil.copytree(root / 'templates/scripts', home / 'scripts')
     (home / 'config.yaml').write_text(safe_dump(config))
     from hermes_cli.plugins import PluginManager
     manager = PluginManager()
@@ -58,7 +59,7 @@ with tempfile.TemporaryDirectory(prefix='group-jev-hermes-') as tmp:
     ident = len('fixture')
     chat = Chat(-ident, 'group', title='Fixture')
     member = User(ident + 1, 'Member', False)
-    bot = User(ident + 2, 'Assistant', True, username='fixture' + '_bot')
+    bot = User(ident + 2, 'Assistant', True, username='fixture_bot')
     adapter._bot = SimpleNamespace(id=bot.id, username=bot.username)
     adapter._current_bot_username = lambda: bot.username
     adapter._chat_id_str = lambda raw: 'fixture-group'
@@ -105,8 +106,8 @@ with tempfile.TemporaryDirectory(prefix='group-jev-hermes-') as tmp:
         results = await manager.ainvoke_hook('pre_gateway_dispatch', event=event, gateway=gateway, session_store=store)
         assert not results
         assert event.reply_expected is True
-        mention = Message(ident + 3, raw.date, chat, member, text='@' + bot.username + ' help',
-                          entities=[MessageEntity('mention', 0, len('@' + bot.username))])
+        mention = Message(ident + 3, raw.date, chat, member, text='@fixture_bot help',
+                          entities=[MessageEntity('mention', 0, len('@fixture_bot'))])
         direct = adapter._apply_telegram_group_observe_attribution(adapter._build_message_event(mention, MessageType.TEXT))
         before = policy.request.await_count
         results = await manager.ainvoke_hook('pre_gateway_dispatch', event=direct, gateway=gateway, session_store=store)

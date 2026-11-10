@@ -51,7 +51,7 @@ Python 3.13 下某些核心依赖可能不安装，但 `hermes --version` 仍能
 回到本仓库根目录，设置 `HERMES_REPO` 为上述 checkout 的绝对路径、`HERMES_HOME` 为本群专用的绝对路径，再运行：
 
 ```sh
-bash deploy/install.sh
+bash deploy/bootstrap.sh  # 首次可一键安装锁定的 Hermes；已有环境也可 install.sh
 # 在 $HERMES_HOME/.env 中私下填写凭据和白名单；保持权限 600。
 # 按 brief 编辑 $HERMES_HOME/config.yaml 和 SOUL.md。
 bash "$HERMES_HOME/start.sh"
@@ -63,20 +63,23 @@ bash "$HERMES_HOME/start.sh"
 
 如果没有 systemd，可以用一个保活循环，示例见 [keepalive.snippet](deploy/keepalive.snippet)。循环本身也需要开机启动机制。判断存活用 Hermes 的实例 runtime lock；`pgrep -f` 可能匹配到执行命令的 shell 自己。
 
-## 可选推特日报
+## 推特日报与群命令
 
-- 编辑实例 `twitter/accounts.txt`，一行一个公开账号。
-- cron 脚本拿不到环境变量；密钥优先放 `$HERMES_HOME/secrets/twitterapi_io.key`，权限 600。脚本从安装位置推导 home，即使 `HERMES_HOME` 也被清除仍可工作。
-- 在实例 `.env` 填 `TWITTER_DIGEST_USER_ID`，按需改 `TWITTER_DIGEST_SCHEDULE` 和 `TWITTER_DIGEST_TIMEZONE`，重跑安装以创建任务。已有任务不自动改时间，用 Hermes cron CLI 显式调整。
-- 提示词来自 `templates/cron/twitter_digest.md`；无候选时最后一行输出 `{"wakeAgent": false}`，不调用摘要模型。
-- twitterapi.io 试用账户有频率限制：请求至少间隔 5.5 秒，429 只重试一次；响应 `code` 可以是字符串，`"0"` 也是成功。
-- 去重是脚本到模型的交接去重；不代表送达成功。送达要看原生 cron delivery 记录；失败后重跑可能跳过已交接候选。
+完整参数来自实例 `twitter/digest.yaml`：关注账号和备注、每路热门关键词/语言/点赞门槛/条数、每日上限、摘要总条数。首次安装自动迁移旧 accounts.txt 后删除旧文件，重装保留用户 YAML；defaults 文件只供迁移。原生 `digest-follow` 默认启用，不改 Hermes 源码。
+
+目标群全部成员可用 `/follow 用户名 [备注]`、`/unfollow 用户名`、`/following`；同步设置 BotFather 命令菜单。不要加命令专属 owner gate；若原生 slash ACL 或群成员白名单限制了成员，应按已确认范围调整。私聊、CLI 和其他群拒绝。先用 Apify 精确验证显示名和粉丝数，再加锁、原子写入 YAML；查不到只说无法确认，不当作账号不存在。重复关注、非法用户名不调用付费接口。改完下次日报读取。
+
+Apify token 优先写入 `secrets/apify.key`（600），备用环境变量 APIFY_TOKEN，不回显。日报使用 Kaito tweet Actor，关注加中英文热门、过去 24 小时，提示词两块排版，digestMaxItems 来自 YAML；有合格且有价值候选时保留 1～2 条中文热门并受总条数约束。
+
+默认日报预算 3 个 run、300 行（$0.075/天上限）；profile 验证独立预算十次/天，单次 $0.005 上限。每次核对已支持计费事件和价格，预留后才 POST；失败/超时/无结果不退款、不重试付费 POST。真实 dry-run 同样占预算，fixture 离线不收费。记账自然日固定 UTC+8，独立于 cron 时区，模型费用另算。不要在没有费用限制和凭据授权时做真实调用。
+
+`.env` 的 TWITTER_DIGEST_USER_ID 可填群；TWITTER_DIGEST_ERROR_USER_ID 必须为正数私信用户且已先 /start。新建 cron 使用 --failure-deliver 将错误单独私信，不能向群广播错误。已有任务不自动改写，升级时显式使用 Hermes cron edit 更新 prompt 和失败接收人。无候选输出 wakeAgent=false；去重是交给模型的记录，不是送达回执。
 
 ## 可选 Jev 路由
 
-仅在确实需要减少 @、且群成员已知近期上下文将发送给外部判断服务时启用。默认插件关闭、mention gate 开启。
+仅在确实需要减少 @、且群成员已知近期上下文将发送给外部判断服务时启用。默认 Jev 插件关闭、mention gate 开启；保留 digest-follow。
 
-先停止网关，在本实例中一起修改：`plugins.enabled: [jev-router]`、`plugins.entries.jev-router.settings.enabled: true`、`platforms.telegram.require_mention: false`，并注入 `JEV_API_KEY`。不要只关闭 mention gate。保持群白名单、observe 和 `guest_mode: false`。
+先停止网关，在本实例中一起修改：`plugins.enabled: [digest-follow, jev-router]`、`plugins.entries.jev-router.settings.enabled: true`、`platforms.telegram.require_mention: false`，并注入 `JEV_API_KEY`。不要只关闭 mention gate。保持群白名单、observe 和 `guest_mode: false`。
 
 保持 `plugins.isolation: in_process`：入口需要真实 gateway 和 SessionStore，host 模式不能替代。先运行插件 Doctor、发现检查，再启动与群内验收。回滚先设回 `require_mention: true`，再禁用插件。
 
@@ -104,3 +107,8 @@ bash "$HERMES_HOME/start.sh"
 - 报告和截图也需要脱敏。你的密钥仓库的 CLI 可能回显值片段，使用前先检查输出行为。
 - HTTPS 证书错误应修复证书链，不能关闭证书校验。
 - 在线替换保活脚本时用新文件加原子替换，再重启循环；保留其他服务的配置。
+
+- 换 Bot 后旧会话消息编号可能冲突：在相关会话 `/reset`。
+- 真实 dry-run 也占每日预算；离线只用 fixture。
+- `cron.wrap_response: false` 去掉 cron 头尾。
+- `platforms.telegram.extra.disable_link_previews: true` 关闭链接预览。

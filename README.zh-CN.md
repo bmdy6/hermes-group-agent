@@ -1,96 +1,85 @@
-# Telegram 群助手
+# Hermes Group Agent
 
-为一个 Telegram 群部署一个独立的 Hermes 助手，用来找回群聊、查询已授权资料，并按需推送日报。
+基于原版 Hermes 的 Telegram 群助手：@ 回答、共享群上下文、GitHub/Linear 只读查询，以及可配置、有限额的推特日报。
 
-[English](README.md) · [MIT](LICENSE) · 可供 Agent 使用的技能，附配置模板与部署脚本。
+[English](README.md) · [让 AI 帮你搭](SKILL.md)
 
-## 适合谁用
+## 适合谁
 
-适合想找回近期讨论、查询指定仓库或任务、按需订阅推特日报的小群。部署者需要 Telegram 账号、Bot、模型 API 账号和运行 Hermes 的主机。群内任何成员都能问到接入资料；私密对话需要另开实例。
+适合希望从群讨论找回上下文、查询明确共享的项目资料、每天接收关注账号和中英文热门摘要的小群。每个群独立 Bot、凭据、记忆和 `HERMES_HOME`。群里任何成员都能问接入的资料，只接群成员都可看的内容，并使用限定范围的只读凭据。
 
-## 三分钟能看到什么
+## 三分钟见效
 
-已有 Python 3.13+ 和登录后的 `gh` 时：
-
-```sh
-gh repo clone bmdy6/skill-tg-group-assistant
-cd skill-tg-group-assistant
-python3 -m unittest discover -s tests -p 'test_*.py' -v
-```
-
-可以看到路由、日报和隔离部署的离线测试通过。不需要 Bot、密钥或外部 API，也不会启动网关。这是本地预览，不代表 Telegram 接入完成。当前私有预览需要仓库访问权限。
-
-## 怎么装
-
-把仓库克隆到所用 Agent 支持的技能目录，再告诉它：
-
-> 用 tg-group-assistant 给一个新的 Telegram 群建助手。先读 SKILL.md。
-
-Agent 按 [SKILL.md](SKILL.md)、[用途访谈](references/interview.md) 和 [Telegram 设置清单](references/telegram-setup-task.md) 操作。可以使用浏览器自动化工具（例如 ego-browser 或 Playwright），也可以手动设置。**先关闭 Bot 隐私模式，再拉进群。**
-
-运行时固定为 **Hermes v0.23.0、Python 3.14**，按锁文件安装：
+已有 Hermes v0.23.0 环境时，可以先离线跑测试、生成临时实例，不需要 Bot token，不会调用模型、Apify 或 Telegram：
 
 ```sh
-git clone --branch v0.23.0 --depth 1 https://github.com/NousResearch/hermes-agent.git hermes-agent
-cd hermes-agent
-uv sync --frozen --python 3.14 --extra telegram --extra mcp
-cd ..
-```
-
-回到本技能仓库，把变量设成自己的绝对路径：
-
-```sh
-export HERMES_REPO="$(cd ../hermes-agent && pwd)"
-export HERMES_HOME="$HOME/.hermes-reading-group"
+export HERMES_REPO="$HOME/apps/hermes-agent"
+export HERMES_HOME="$(mktemp -d)/group-instance"
+"$HERMES_REPO/.venv/bin/python" -m unittest discover -s tests -v
 bash deploy/install.sh
+cat "$HERMES_HOME/twitter/digest.yaml"
 ```
 
-不要共用个人 Hermes 实例。私下从你的密钥仓库填入 `$HERMES_HOME/.env`，权限保持 `600`。两个群白名单都只填目标群，用户白名单填允许私聊的 owner。编辑实例里的 `config.yaml` 与 `SOUL.md` 后启动：
+这一步证明代码和初始化可用。首次下载依赖可能更久；真实接入还需要自己的 Bot、模型和 Apify 凭据。正式使用请换成持久化的隔离目录。
+
+## 安装
+
+先安装 Git 和 [uv](https://docs.astral.sh/uv/getting-started/installation/)，然后一条命令初始化：
+
+```sh
+export HERMES_REPO="$HOME/apps/hermes-agent"
+export HERMES_HOME="$HOME/.hermes-my-group"
+bash deploy/bootstrap.sh
+```
+
+脚本检出 Hermes v0.23.0，用 Python 3.14 和锁文件装依赖，生成隔离实例，不启动网关。私下填写 `$HERMES_HOME/.env` 的 `MODEL_API_KEY`、`TELEGRAM_BOT_TOKEN`、允许私聊的 `TELEGRAM_ALLOWED_USERS`，以及只包含目标群的 `TELEGRAM_ALLOWED_CHATS` / `TELEGRAM_GROUP_ALLOWED_CHATS`。默认 provider 和模型仅作示例，请在 config.yaml 选择自己的可用服务和预算。凭据权限保持 600。Bot 设置见[检查单](references/telegram-setup-task.md)：先关隐私模式，再加群；同一个 token 只能有一个消息消费者。
+
+默认被 @ 或回复才回答，其他消息进入群上下文。目标群所有成员都可以使用原生斜杠命令：
+
+- `/follow 用户名 [备注]`：先精确验证 X 账号，再写配置，回复显示名和粉丝数。
+- `/unfollow 用户名`：忽略大小写移除。
+- `/following`：列出名单及备注。
+
+在 BotFather 命令菜单登记 follow、unfollow、following；群里也可用 `/follow@你的Bot 用户名`。如另设 Hermes slash ACL 或群成员白名单，需允许预期成员使用；插件本身没有管理员限制。私聊、CLI、其他群拒绝修改，不改 Hermes 源码。
+
+唯一生效配置为 `twitter/digest.yaml`：关注账号及备注、每路热门的关键词/语言/点赞门槛/条数、每日调用和条数上限、摘要总条数。固定锁、原子替换、保留注释和引号；旧 accounts.txt 成功迁移后删除，重装不覆盖已编辑 YAML。digest.defaults.yaml 只供迁移使用。群命令改完立即落盘，下次日报读取；已开始的日报使用启动时快照。示例账号请自行替换。
+
+日报使用自己的 Apify token，写入 `$HERMES_HOME/secrets/apify.key` 并设为 600；手动运行可用 `APIFY_TOKEN`。在 `.env` 设置 `TWITTER_DIGEST_USER_ID` 为投递群或用户，`TWITTER_DIGEST_ERROR_USER_ID` 必须是正数私信用户 ID，先向 Bot 发过 `/start`。重跑 install.sh 创建原生 cron。成功可投群，失败使用独立 `--failure-deliver` 只私信。已有任务会保留，升级时用 `hermes cron edit` 显式更新 prompt 和失败接收人；时间和时区可用 TWITTER_DIGEST_SCHEDULE / TWITTER_DIGEST_TIMEZONE 设置，默认 UTC 09:00。
+
+使用 [Kaito 推文 Actor](https://apify.com/kaitoeasyapi/twitter-x-data-tweet-scraper-pay-per-result-cheapest)，关注账号和中英文热门分路查询，过滤过去 24 小时，按「关注的人」「全网热门」两块排版，连续编号、中文要点和原文链接。摘要总条数由 YAML 传入；有合格且有价值候选时保留 1～2 条中文热门，并受总上限约束，模型实际遵守情况须验收。
+
+默认日报每日 3 次、预留 300 行，价格守卫最高 $0.00025/行，即 $0.075/天。关注验证使用 [API Dojo profile Actor](https://apify.com/apidojo/twitter-user-scraper)，当前 $0.004/查询加 $0.0004/返回账号，单次硬上限 $0.005，独立预算默认每天十次、最多预留 $0.05；不抓粉丝/关注列表。每次启动前核对计费事件及价格；失败、超时、无结果照样占预留预算，不重试付费 POST。非法用户名和重复关注不发付费请求；未确认账号不写入。以上不含模型费用。即时账单可能未结算，需要稍后回读 run；Actor 不保证返回数量，收费占位行会被过滤。每日预算按 UTC+8 自然日核算，独立于 cron 时区。
+
+去重代表交给模型，不代表送达；模型或投递失败不会自动恢复候选。`--fixture` 完全离线，真实 `--dry-run` 仍调用 Apify、占预算。
+
+GitHub/Linear MCP 默认关闭，凭据本身和服务端点都要只读，且限定资料范围；启用前检查真实工具清单。Jev 主动路由可选且默认关闭，需明确上下文会发给外部服务，再按 [SKILL.md](SKILL.md) 同步启用插件与调整 mention gate，不能单独关闭 @ 门槛。
+
+完成下面的验收准备后，手动启动：
 
 ```sh
 bash "$HERMES_HOME/start.sh"
 ```
 
-安装不会启动网关。重跑安装保留 `.env`、配置、人设、账号列表；会更新附带脚本和插件。模板里的配置变化不会覆盖已有实例，需要显式改实例配置。一个群使用一个 Bot 和一个 `HERMES_HOME`。
+需要保活时参考 [keepalive.snippet](deploy/keepalive.snippet)，保留其他服务；安装不会自动注册系统服务。记忆属于整个实例，私密个人资料请放另一个实例。
 
-MCP 与 Jev 默认关闭。MCP 必须同时使用**限定范围的只读 token 和只读端点**，核对最终工具清单，再启用需要的服务。群工具只给 web、skills、todo、memory、session_search 与批准的只读 MCP 工具集。
+## 验收
 
-## 可选能力
-
-| 能力 | 配置方法 |
+| 档位 | 需要的证据 |
 |---|---|
-| 推特日报 | 在实例 `twitter/accounts.txt` 填公开账号；密钥放 `secrets/twitterapi_io.key`、权限 600；在 `.env` 填接收者、时间和时区，重跑安装。已有任务用 cron CLI 显式修改。 |
-| Jev 减少 @ | 告知群成员上下文会交给外部判断服务；停网关，同时打开插件两个开关、设置 `require_mention: false`；私下注入 key。[启用与回滚](SKILL.md#可选-jev-路由)。 |
-| 保活 | 如果没有 systemd，可以用一个保活循环，见 [keepalive.snippet](deploy/keepalive.snippet)；循环还需要主机开机启动机制。 |
+| 代码完成 | 离线测试、真实 Hermes 配置和工具检查、插件发现及上下文分派、迁移和重复安装通过，见 [checks](checks/README.md)。 |
+| 真实接入通过 | 群内 @/回复和上下文、全体成员关注命令、其他群与私聊拒绝、MCP 只读工具清单、有限额真实 Apify、实际模型两块排版和原生投递记录。 |
+| 已上线 | 部署版本、凭据与保活核对，重启正确，至少连续 24 小时健康运行和按时投递。 |
 
-Jev 保守参数：第一题 addressed 分数至少 **0.85**，每群 **600 秒**最多主动放行一次，默认 **10 条**上下文，总超时最多 **2 秒**。缺 key 或错误时沉默，其他两题只记录。判断记录在 `$HERMES_HOME/state/jev_router.jsonl`，保留十四天；比较 `scores` 和 `decision` 看误放行与漏放行。群和消息使用摘要引用，预览遮蔽凭据与数字；`allow` 不能当作送达证据。
-
-## 三档验收
-
-| 档位 | 证据 |
-|---|---|
-| 代码完成 | 离线测试全绿；隔离安装幂等；真实 Hermes 配置与工具面检查通过，见 [运行时检查](checks/README.md)。 |
-| 真实接入通过 | 不 @ 时沉默，@ 后能引用刚才谁说过什么；重启会话保留；其他群被拒；MCP 只读；可选日报 delivery 为 delivered；Jev 冷却与故障行为符合预期。 |
-| 已上线 | 保活下连续运行至少 24 小时；定时任务准时；日志无反复错误。 |
-
-离线测试通过只能证明本地检查。运行时检查、真实接入和上线时长需要各自的证据。
+测试通过不能替代部署或 Telegram 送达。本仓库不附带真实凭据，也不预先声称你的实例已上线。
 
 ## 已知坑
 
-- Hermes v0.23.0 要 Python 3.14、`uv sync --frozen`。Python 3.13 下能运行版本命令，不代表核心依赖装齐。
-- 先关闭隐私模式再入群；Bot 看不到入群前历史。
-- `drop_pending_on_cold_boot: false` 保留重启期间消息；网关启动后不要再调 `getUpdates`，同一 token 只能有一个消费者。
-- 长期记忆是整个实例共用，包含私聊；人设不能隔离群聊与私聊的私密资料。
-- cron 脚本拿不到环境变量；日报从安装位置推导 home，优先读取密钥文件。
-- twitterapi.io 试用账号有频率限制，请求至少间隔 5.5 秒，429 只重试一次；`code` 字段可能是字符串，`"0"` 也是成功。
-- 日报去重记录的是交给 Hermes 的候选，不代表送达；发送失败后重跑可能跳过已交接候选。
-- `pgrep -f` 会匹配检查命令自己。启动脚本用 Hermes 的实例 runtime lock，保活循环仍需要开机启动机制。
-- Jev 需要 `in_process`、真实 gateway 和 SessionStore。插件用 `jev_model`，避免与保留根名 `model` 冲突。
-
-## 目录
-
-`SKILL.md`、`references/` 是操作指南；`templates/` 包含 Hermes 配置、人设、Jev 原生插件、日报脚本和提示词、空账号列表、`.env.example`；`deploy/` 安装和启动独立实例；`tests/` 全部离线；`checks/` 放显式运行的真实 Hermes 与在线只读检查。
-
-## 许可证
-
-[MIT](LICENSE)。
+- 换 Bot 后可能与旧会话消息编号冲突，在相关会话 `/reset`。
+- 真实 dry-run 也占每日预算和 Apify 额度；离线测试用 fixture。
+- `cron.wrap_response: false` 去掉 cron 头尾。
+- `platforms.telegram.extra.disable_link_previews: true` 关闭链接预览。
+- 先关闭隐私模式，再拉 Bot 入群；普通群升级后 ID 会变化。
+- 同 token 只能有一个更新消费者，网关运行时不要旁路 getUpdates。
+- Python 3.13 可能能输出版本却缺核心依赖，用 3.14 和锁文件。
+- HTTPS 证书有问题应修复证书链，不能关闭校验。
+- 只读限制写入，不限制目标群里谁能读取接入资料。

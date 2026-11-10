@@ -40,3 +40,14 @@ Use a subshell for this sequence so HOME changes remain local. Remove the dispos
 ```sh
 PYTHONPATH="$HERMES_REPO" "$HERMES_REPO/.venv/bin/python" checks/verify_mcp.py
 ```
+
+
+Digest configuration and native command acceptance (offline, no gateway):
+
+```sh
+"$HERMES_REPO/.venv/bin/python" -m unittest discover -s tests -v
+PYTHONPATH="$HERMES_REPO" "$HERMES_REPO/.venv/bin/python" checks/verify_follow_hermes.py
+"$HERMES_REPO/.venv/bin/python" checks/verify_install.py "$HERMES_REPO"
+```
+
+The first command covers YAML migration/round-trip/concurrent edits, parsing/invalid handles/duplicate follows, mocked Apify budgets and queries, and shell installation contracts. The native check uses actual plugin discovery and context-aware dispatch, including different members of the same group, while denying network. Real delivery and model-format checks belong to live acceptance.

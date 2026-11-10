@@ -40,6 +40,7 @@ with tempfile.TemporaryDirectory(prefix="group-install-") as tmp:
     assert stat.S_IMODE((team / ".env").stat().st_mode) == 0o600
     for name in ('plugin.yaml', '__init__.py'):
         assert (team / 'plugins/jev-router' / name).read_bytes() == (root / 'templates/hermes/plugins/jev-router' / name).read_bytes()
+    with (team/'twitter/digest.yaml').open('a') as f: f.write('\n# operator follow edit\n')
     before = snapshot(home)
     install()
     assert snapshot(home) == before, "Blank-credentials second install changed the tree"
@@ -59,6 +60,7 @@ with tempfile.TemporaryDirectory(prefix="group-install-") as tmp:
     job = jobs[0]
     assert job["name"] == "twitter-digest"
     assert job["deliver"] == f"telegram:{owner}"
+    assert job['failure_deliver'] == f'telegram:{owner}'
     assert job["script"] == "twitter_digest.py"
     assert job["schedule"]["expr"] == "0 9 * * *", job["schedule"]
     assert "UTC" in json.dumps(job), job
