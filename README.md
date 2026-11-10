@@ -2,13 +2,13 @@
 
 A Telegram group assistant with shared conversation context, scoped read-only GitHub/Linear access, and a configurable, budget-limited X/Twitter digest, built on unmodified Hermes.
 
-[中文](README.zh-CN.md) · [AI setup entry](SKILL.md)
-
 <!-- readme-illustrate:group-flow-en -->
 <img src="docs/images/group-flow.svg" alt="Group mention, shared context, scoped read-only sources and daily digest" width="838">
 
-Illustration: @mention → shared context → scoped read-only GitHub/Linear → group reply; daily digest follows its own budget. This is a flow diagram, not a Telegram screenshot.
+Illustration: @mention → shared context → scoped sources → reply; daily digest.
 <!-- /readme-illustrate:group-flow-en -->
+[中文](README.zh-CN.md) · [AI setup entry](SKILL.md)
+
 ## Who it is for
 
 Small groups that want an assistant to answer when mentioned, recall group discussion, read explicitly shared project data, and deliver a daily digest. Each group gets its own Bot, credentials, memory and `HERMES_HOME`. Everyone in the allowed group can query connected data: use group-safe, narrowly scoped read-only credentials.

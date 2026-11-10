@@ -1,32 +1,39 @@
 {
+  "baseline": {
+    "version": 2,
+    "commit": "b7f4bac348023472786065ecea1318787fbe9016",
+    "readmes": [
+      {
+        "file": "README.md",
+        "blob": "143d834b1e2156b452c298805a4c7252e73ee8c1"
+      },
+      {
+        "file": "README.zh-CN.md",
+        "blob": "62181b399cef080aeb2c75e6828f717d7c31c510"
+      }
+    ]
+  },
+  "sources": "docs/images/SOURCES.md",
   "images": [
     {
       "id": "group-flow-en",
       "readme": "README.md",
       "file": "docs/images/group-flow.svg",
+      "sha256": "2a1393888dcaf7acda752dac9660ce1a9873bad9be649f62e2b5d92fbbd16b6f",
       "width": 838,
+      "placement": "hero",
       "alt": "Group mention, shared context, scoped read-only sources and daily digest",
-      "caption": "Illustration: @mention → shared context → scoped read-only GitHub/Linear → group reply; daily digest follows its own budget. This is a flow diagram, not a Telegram screenshot.",
-      "source": {
-        "kind": "illustration",
-        "command": "node docs/images/draw-flow.mjs",
-        "data": "Original bilingual diagram based on README + templates/hermes/config.yaml + templates/cron/twitter_digest.md; no real group/user data",
-        "sha256": "2a1393888dcaf7acda752dac9660ce1a9873bad9be649f62e2b5d92fbbd16b6f"
-      }
+      "caption": "Illustration: @mention → shared context → scoped sources → reply; daily digest."
     },
     {
       "id": "group-flow-zh",
       "readme": "README.zh-CN.md",
       "file": "docs/images/group-flow.svg",
+      "sha256": "2a1393888dcaf7acda752dac9660ce1a9873bad9be649f62e2b5d92fbbd16b6f",
       "width": 838,
+      "placement": "hero",
       "alt": "群里提及、共享上下文、只读数据源与每日摘要流程",
-      "caption": "示意图：群里 @ → 读取共享上下文 → 按授权只读查询 GitHub/Linear → 回答；每日摘要单独受预算限制。这是流程示意图，不是真实 Telegram 界面。",
-      "source": {
-        "kind": "illustration",
-        "command": "node docs/images/draw-flow.mjs",
-        "data": "Original bilingual diagram based on README + templates/hermes/config.yaml + templates/cron/twitter_digest.md; no real group/user data",
-        "sha256": "2a1393888dcaf7acda752dac9660ce1a9873bad9be649f62e2b5d92fbbd16b6f"
-      }
+      "caption": "示意图：群里 @ → 共享上下文 → 授权数据源 → 回答；每日摘要单独受预算限制。"
     }
   ]
 }
