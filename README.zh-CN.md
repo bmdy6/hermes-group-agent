@@ -4,6 +4,11 @@
 
 [English](README.md) · [让 AI 帮你搭](SKILL.md)
 
+<!-- readme-illustrate:group-flow-zh -->
+<img src="docs/images/group-flow.svg" alt="群里提及、共享上下文、只读数据源与每日摘要流程" width="838">
+
+示意图：群里 @ → 读取共享上下文 → 按授权只读查询 GitHub/Linear → 回答；每日摘要单独受预算限制。这是流程示意图，不是真实 Telegram 界面。
+<!-- /readme-illustrate:group-flow-zh -->
 ## 适合谁
 
 适合希望从群讨论找回上下文、查询明确共享的项目资料、每天接收关注账号和中英文热门摘要的小群。每个群独立 Bot、凭据、记忆和 `HERMES_HOME`。群里任何成员都能问接入的资料，只接群成员都可看的内容，并使用限定范围的只读凭据。

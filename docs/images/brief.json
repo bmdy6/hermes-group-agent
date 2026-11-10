@@ -1,0 +1,10 @@
+{
+  "installs": {
+    "README.md": {
+      "block": "export HERMES_REPO=\"$HOME/apps/hermes-agent\"\nexport HERMES_HOME=\"$HOME/.hermes-my-group\"\nbash deploy/bootstrap.sh"
+    },
+    "README.zh-CN.md": {
+      "block": "export HERMES_REPO=\"$HOME/apps/hermes-agent\"\nexport HERMES_HOME=\"$HOME/.hermes-my-group\"\nbash deploy/bootstrap.sh"
+    }
+  }
+}
