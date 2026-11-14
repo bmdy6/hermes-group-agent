@@ -9,24 +9,6 @@
 <!-- /readme-illustrate:group-flow-zh -->
 [English](README.md) · [让 AI 帮你搭](SKILL.md)
 
-## 适合谁
-
-适合希望从群讨论找回上下文、查询明确共享的项目资料、每天接收关注账号和中英文热门摘要的小群。每个群独立 Bot、凭据、记忆和 `HERMES_HOME`。群里任何成员都能问接入的资料，只接群成员都可看的内容，并使用限定范围的只读凭据。
-
-## 三分钟见效
-
-已有 Hermes v0.23.0 环境时，可以先离线跑测试、生成临时实例，不需要 Bot token，不会调用模型、Apify 或 Telegram：
-
-```sh
-export HERMES_REPO="$HOME/apps/hermes-agent"
-export HERMES_HOME="$(mktemp -d)/group-instance"
-"$HERMES_REPO/.venv/bin/python" -m unittest discover -s tests -v
-bash deploy/install.sh
-cat "$HERMES_HOME/twitter/digest.yaml"
-```
-
-这一步证明代码和初始化可用。首次下载依赖可能更久；真实接入还需要自己的 Bot、模型和 Apify 凭据。正式使用请换成持久化的隔离目录。
-
 ## 安装
 
 先安装 Git 和 [uv](https://docs.astral.sh/uv/getting-started/installation/)，然后一条命令初始化：
@@ -47,6 +29,8 @@ bash deploy/bootstrap.sh
 
 在 BotFather 命令菜单登记 follow、unfollow、following；群里也可用 `/follow@你的Bot 用户名`。如另设 Hermes slash ACL 或群成员白名单，需允许预期成员使用；插件本身没有管理员限制。私聊、CLI、其他群拒绝修改，不改 Hermes 源码。
 
+<details><summary>日报与集成配置细节</summary>
+
 唯一生效配置为 `twitter/digest.yaml`：关注账号及备注、每路热门的关键词/语言/点赞门槛/条数、每日调用和条数上限、摘要总条数。固定锁、原子替换、保留注释和引号；旧 accounts.txt 成功迁移后删除，重装不覆盖已编辑 YAML。digest.defaults.yaml 只供迁移使用。群命令改完立即落盘，下次日报读取；已开始的日报使用启动时快照。示例账号请自行替换。
 
 日报使用自己的 Apify token，写入 `$HERMES_HOME/secrets/apify.key` 并设为 600；手动运行可用 `APIFY_TOKEN`。在 `.env` 设置 `TWITTER_DIGEST_USER_ID` 为投递群或用户，`TWITTER_DIGEST_ERROR_USER_ID` 必须是正数私信用户 ID，先向 Bot 发过 `/start`。重跑 install.sh 创建原生 cron。成功可投群，失败使用独立 `--failure-deliver` 只私信。已有任务会保留，升级时用 `hermes cron edit` 显式更新 prompt 和失败接收人；时间和时区可用 TWITTER_DIGEST_SCHEDULE / TWITTER_DIGEST_TIMEZONE 设置，默认 UTC 09:00。
@@ -59,6 +43,8 @@ bash deploy/bootstrap.sh
 
 GitHub/Linear MCP 默认关闭，凭据本身和服务端点都要只读，且限定资料范围；启用前检查真实工具清单。Jev 主动路由可选且默认关闭，需明确上下文会发给外部服务，再按 [SKILL.md](SKILL.md) 同步启用插件与调整 mention gate，不能单独关闭 @ 门槛。
 
+</details>
+
 完成下面的验收准备后，手动启动：
 
 ```sh
@@ -66,6 +52,24 @@ bash "$HERMES_HOME/start.sh"
 ```
 
 需要保活时参考 [keepalive.snippet](deploy/keepalive.snippet)，保留其他服务；安装不会自动注册系统服务。记忆属于整个实例，私密个人资料请放另一个实例。
+
+## 适合谁
+
+适合希望从群讨论找回上下文、查询明确共享的项目资料、每天接收关注账号和中英文热门摘要的小群。每个群独立 Bot、凭据、记忆和 `HERMES_HOME`。群里任何成员都能问接入的资料，只接群成员都可看的内容，并使用限定范围的只读凭据。
+
+## 已有环境的离线检查
+
+已有 Hermes v0.23.0 环境时，可以先离线跑测试、生成临时实例，不需要 Bot token，不会调用模型、Apify 或 Telegram：
+
+```sh
+export HERMES_REPO="$HOME/apps/hermes-agent"
+export HERMES_HOME="$(mktemp -d)/group-instance"
+"$HERMES_REPO/.venv/bin/python" -m unittest discover -s tests -v
+bash deploy/install.sh
+cat "$HERMES_HOME/twitter/digest.yaml"
+```
+
+这一步证明代码和初始化可用。首次下载依赖可能更久；真实接入还需要自己的 Bot、模型和 Apify 凭据。正式使用请换成持久化的隔离目录。
 
 ## 验收
 

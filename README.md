@@ -9,24 +9,6 @@ Illustration: @mention → shared context → scoped sources → reply; daily di
 <!-- /readme-illustrate:group-flow-en -->
 [中文](README.zh-CN.md) · [AI setup entry](SKILL.md)
 
-## Who it is for
-
-Small groups that want an assistant to answer when mentioned, recall group discussion, read explicitly shared project data, and deliver a daily digest. Each group gets its own Bot, credentials, memory and `HERMES_HOME`. Everyone in the allowed group can query connected data: use group-safe, narrowly scoped read-only credentials.
-
-## See it work in three minutes
-
-With Hermes v0.23.0 already installed, run the offline suite and initialize a disposable instance. No Bot token, model request, Apify run or Telegram message is needed:
-
-```sh
-export HERMES_REPO="$HOME/apps/hermes-agent"
-export HERMES_HOME="$(mktemp -d)/group-instance"
-"$HERMES_REPO/.venv/bin/python" -m unittest discover -s tests -v
-bash deploy/install.sh
-cat "$HERMES_HOME/twitter/digest.yaml"
-```
-
-This demonstrates code and initialization, not live service acceptance. A fresh dependency install may take longer. For live use, choose a persistent isolated directory, create your Bot, disable privacy mode before adding it to the group, and fill the private configuration below.
-
 ## Install
 
 Prerequisites: Git and [uv](https://docs.astral.sh/uv/getting-started/installation/). The one-command initializer installs Hermes v0.23.0 with its lockfile on Python 3.14 and seeds an isolated instance:
@@ -47,6 +29,8 @@ The default assistant responds to @mentions/replies and observes other messages 
 
 Register these names in BotFather's command menu; Telegram supports `/follow@YourBot username`. Keep any additional Hermes slash ACL or group sender allowlist compatible with all intended group members. Commands reject DMs, CLI and other groups; there is no command-specific owner gate. No Hermes source patch is needed.
 
+<details><summary>Digest and integration configuration details</summary>
+
 `twitter/digest.yaml` is the only active digest config: account notes, each hot route's keywords/language/minimum likes/result count, daily run/item caps and digest maximum. Comments and quotes survive locked atomic edits. A legacy `accounts.txt` migrates automatically before deletion; reinstall preserves operator YAML. `digest.defaults.yaml` is migration-only. Changes are persisted immediately and read by the next digest; an already-running digest uses its starting snapshot. The example account list is for replacement.
 
 For the digest, put your Apify token in `$HERMES_HOME/secrets/apify.key` (mode 600); manual execution can use `APIFY_TOKEN`. Set `TWITTER_DIGEST_USER_ID` to the destination group or user, and `TWITTER_DIGEST_ERROR_USER_ID` to a positive private user ID. The error recipient must first DM `/start` to the Bot. Rerun `deploy/install.sh` to register the native cron. Success may go to the group; failures explicitly use `--failure-deliver telegram:<private user>`. Existing jobs are preserved: use `hermes cron edit` to update their prompt and failure destination. Schedule and timezone can be set using `TWITTER_DIGEST_SCHEDULE` and `TWITTER_DIGEST_TIMEZONE` (defaults 09:00 UTC).
@@ -59,6 +43,8 @@ Deduplication is a handoff to the model, not a delivery receipt; failed model/de
 
 GitHub and Linear MCPs default to disabled. Enable only after inspecting scope-limited read-only credentials and the actual tools list; official read-only endpoints and disabled sampling are preconfigured. Jev ambient routing remains optional and off; [SKILL.md](SKILL.md) explains disclosure, conservative thresholds and recovery. Do not disable the mention gate alone.
 
+</details>
+
 After the checks below, explicitly start the instance:
 
 ```sh
@@ -66,6 +52,24 @@ bash "$HERMES_HOME/start.sh"
 ```
 
 Use [keepalive.snippet](deploy/keepalive.snippet) as an optional supervisor example, preserving other services. Installation does not add a system service. Instance files are shared memory, so keep personal private data in a different instance.
+
+## Who it is for
+
+Small groups that want an assistant to answer when mentioned, recall group discussion, read explicitly shared project data, and deliver a daily digest. Each group gets its own Bot, credentials, memory and `HERMES_HOME`. Everyone in the allowed group can query connected data: use group-safe, narrowly scoped read-only credentials.
+
+## Offline checks for an existing environment
+
+With Hermes v0.23.0 already installed, run the offline suite and initialize a disposable instance. No Bot token, model request, Apify run or Telegram message is needed:
+
+```sh
+export HERMES_REPO="$HOME/apps/hermes-agent"
+export HERMES_HOME="$(mktemp -d)/group-instance"
+"$HERMES_REPO/.venv/bin/python" -m unittest discover -s tests -v
+bash deploy/install.sh
+cat "$HERMES_HOME/twitter/digest.yaml"
+```
+
+This demonstrates code and initialization, not live service acceptance. A fresh dependency install may take longer. For live use, choose a persistent isolated directory, create your Bot, disable privacy mode before adding it to the group, and fill the private configuration below.
 
 ## Acceptance
 
