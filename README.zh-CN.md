@@ -1,3 +1,5 @@
+低维护：作为作品展示，Issue 可能不及时回复
+
 # Hermes Group Agent
 
 基于原版 Hermes 的 Telegram 群助手：@ 回答、共享群上下文、GitHub/Linear 只读查询，以及可配置、有限额的推特日报。
