@@ -1,3 +1,5 @@
+低维护：作为作品展示，Issue 可能不及时回复
+
 # Hermes Group Agent
 
 A Telegram group assistant with shared conversation context, scoped read-only GitHub/Linear access, and a configurable, budget-limited X/Twitter digest, built on unmodified Hermes.
